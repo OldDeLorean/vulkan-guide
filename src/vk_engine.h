@@ -31,6 +31,13 @@ struct FrameData {
     DeletionQueue _deletionQueue;
 };
 
+struct ComputePushConstants {
+    glm::vec4 data1;
+    glm::vec4 data2;
+    glm::vec4 data3;
+    glm::vec4 data4;
+};
+
 constexpr unsigned int FRAME_OVERLAP = 2;
 
 class VulkanEngine {
@@ -75,6 +82,13 @@ public:
     VkPipeline _gradientPipeline;
     VkPipelineLayout _gradientPipelineLayout;
 
+    // immediate submit structures
+    VkFence _immFence;
+    VkCommandBuffer _immCommandBuffer;
+    VkCommandPool _immCommandPool;
+
+    void immediate_submit(std::function<void(VkCommandBuffer cmd)> &&function);
+
     VkInstance _instance;                       // Vulkan library handle
     VkDebugUtilsMessengerEXT _debug_messenger;  // Vulkan debug output handle
     VkPhysicalDevice _chosenGPU;                // GPU chosen as the default device
@@ -111,4 +125,7 @@ private:
 
     void init_pipelines();
     void init_background_pipelines();
+
+    void init_imgui();
+    void draw_imgui(VkCommandBuffer cmd, VkImageView targetImageView);
 };
