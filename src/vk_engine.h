@@ -38,6 +38,15 @@ struct ComputePushConstants {
     glm::vec4 data4;
 };
 
+struct ComputeEffect {
+    const char *name;
+
+    VkPipeline pipeline;
+    VkPipelineLayout layout;
+
+    ComputePushConstants data;
+};
+
 constexpr unsigned int FRAME_OVERLAP = 2;
 
 class VulkanEngine {
@@ -88,6 +97,9 @@ public:
     VkCommandPool _immCommandPool;
 
     void immediate_submit(std::function<void(VkCommandBuffer cmd)> &&function);
+
+    std::vector<ComputeEffect> backgroundEffects;
+    int currentBackgroundEffect{0};
 
     VkInstance _instance;                       // Vulkan library handle
     VkDebugUtilsMessengerEXT _debug_messenger;  // Vulkan debug output handle
