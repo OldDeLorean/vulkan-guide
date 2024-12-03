@@ -78,6 +78,11 @@ public:
     // run main loop
     void run();
 
+    GPUMeshBuffers uploadMesh(std::span<uint32_t> indices, std::span<Vertex> vertices);
+
+    AllocatedBuffer create_buffer(size_t allocSize, VkBufferUsageFlags usage, VmaMemoryUsage memoryUsage);
+    void destroy_buffer(const AllocatedBuffer &buffer);
+
     VmaAllocator _allocator;
 
     // draw resources
@@ -107,6 +112,12 @@ public:
     // triangle pipeline
     VkPipelineLayout _trianglePipelineLayout;
     VkPipeline _trianglePipeline;
+
+    // mesh pipeline
+    VkPipelineLayout _meshPipelineLayout;
+    VkPipeline _meshPipeline;
+
+    GPUMeshBuffers rectangle;
 
     VkInstance _instance;                       // Vulkan library handle
     VkDebugUtilsMessengerEXT _debug_messenger;  // Vulkan debug output handle
@@ -146,6 +157,9 @@ private:
     void init_background_pipelines();
 
     void init_triangle_pipeline();
+
+    void init_mesh_pipeline();
+    void init_default_data();
 
     void init_imgui();
     void draw_imgui(VkCommandBuffer cmd, VkImageView targetImageView);
