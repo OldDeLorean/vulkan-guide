@@ -24,6 +24,8 @@ file(GLOB_RECURSE GLSL_SOURCE_FILES
     "${PROJECT_SOURCE_DIR}/shaders/*.frag"
     "${PROJECT_SOURCE_DIR}/shaders/*.vert"
     "${PROJECT_SOURCE_DIR}/shaders/*.comp"
+    "${PROJECT_SOURCE_DIR}/shaders/colored_triangle.vert"
+    "${PROJECT_SOURCE_DIR}/shaders/colored_triangle.frag"
     )
 
 foreach(GLSL ${GLSL_SOURCE_FILES})

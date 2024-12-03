@@ -72,6 +72,9 @@ public:
     // draw background
     void draw_background(VkCommandBuffer cmd);
 
+    // draw triangle
+    void draw_geometry(VkCommandBuffer cmd);
+
     // run main loop
     void run();
 
@@ -100,6 +103,10 @@ public:
 
     std::vector<ComputeEffect> backgroundEffects;
     int currentBackgroundEffect{0};
+
+    // triangle pipeline
+    VkPipelineLayout _trianglePipelineLayout;
+    VkPipeline _trianglePipeline;
 
     VkInstance _instance;                       // Vulkan library handle
     VkDebugUtilsMessengerEXT _debug_messenger;  // Vulkan debug output handle
@@ -137,6 +144,8 @@ private:
 
     void init_pipelines();
     void init_background_pipelines();
+
+    void init_triangle_pipeline();
 
     void init_imgui();
     void draw_imgui(VkCommandBuffer cmd, VkImageView targetImageView);
