@@ -4,6 +4,7 @@
 #pragma once
 
 #include <vk_descriptors.h>
+#include <vk_loader.h>
 #include <vk_types.h>
 
 struct DeletionQueue {
@@ -87,7 +88,9 @@ public:
 
     // draw resources
     AllocatedImage _drawImage;
+    AllocatedImage _depthImage;
     VkExtent2D _drawExtent;
+    float renderScale = 1.f;
 
     // global descriptor allocator
     DescriptorAllocator globalDescriptorAllocator;
@@ -119,6 +122,9 @@ public:
 
     GPUMeshBuffers rectangle;
 
+    // mesh
+    std::vector<std::shared_ptr<MeshAsset>> testMeshes;
+
     VkInstance _instance;                       // Vulkan library handle
     VkDebugUtilsMessengerEXT _debug_messenger;  // Vulkan debug output handle
     VkPhysicalDevice _chosenGPU;                // GPU chosen as the default device
@@ -142,9 +148,12 @@ public:
     VkQueue _graphicsQueue;
     uint32_t _graphicsQueueFamily;
 
+    bool resize_requested{false};
+
 private:
     void init_vulkan();
     void init_swapchain();
+    void resize_swapchain();
     void init_commands();
     void init_sync_structures();
 
