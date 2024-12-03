@@ -24,14 +24,6 @@ struct DeletionQueue {
     }
 };
 
-struct FrameData {
-    VkSemaphore _swapchainSemaphore, _renderSemaphore;
-    VkFence _renderFence;
-    VkCommandPool _commandPool;
-    VkCommandBuffer _mainCommandBuffer;
-    DeletionQueue _deletionQueue;
-};
-
 struct ComputePushConstants {
     glm::vec4 data1;
     glm::vec4 data2;
@@ -46,6 +38,89 @@ struct ComputeEffect {
     VkPipelineLayout layout;
 
     ComputePushConstants data;
+};
+
+struct FrameData {
+    VkSemaphore _swapchainSemaphore, _renderSemaphore;
+    VkFence _renderFence;
+
+    VkCommandPool _commandPool;
+    VkCommandBuffer _mainCommandBuffer;
+
+    DeletionQueue _deletionQueue;
+    DescriptorAllocatorGrowable _frameDescriptors;
+};
+
+struct RenderObject {
+    uint32_t indexCount;
+    uint32_t firstIndex;
+    VkBuffer indexBuffer;
+
+    MaterialInstance *material;
+
+    glm::mat4 transform;
+    VkDeviceAddress vertexBufferAddress;
+};
+
+struct GPUSceneData {
+    glm::mat4 view;
+    glm::mat4 proj;
+    glm::mat4 viewproj;
+    glm::vec4 ambientColor;
+    glm::vec4 sunlightDirection;  // w for sun power
+    glm::vec4 sunlightColor;
+};
+
+struct GLTFMetallic_Roughness {
+    MaterialPipeline opaquePipeline;
+    MaterialPipeline transparentPipeline;
+
+    VkDescriptorSetLayout materialLayout;
+
+    struct MaterialConstants {
+        glm::vec4 colorFactors;
+        glm::vec4 metal_rough_factors;
+        // padding, we need it anyway for uniform buffers
+        glm::vec4 extra[14];
+    };
+
+    struct MaterialResources {
+        AllocatedImage colorImage;
+        VkSampler colorSampler;
+        AllocatedImage metalRoughImage;
+        VkSampler metalRoughSampler;
+        VkBuffer dataBuffer;
+        uint32_t dataBufferOffset;
+    };
+
+    DescriptorWriter writer;
+
+    void build_pipelines(VulkanEngine *engine);
+    void clear_resources(VkDevice device);
+
+    MaterialInstance write_material(VkDevice device, MaterialPass pass, const MaterialResources &resources,
+                                    DescriptorAllocatorGrowable &descriptorAllocator);
+};
+
+struct MeshNode : public Node {
+    std::shared_ptr<MeshAsset> mesh;
+
+    virtual void Draw(const glm::mat4 &topMatrix, DrawContext &ctx) override;
+};
+
+struct RenderObject {
+    uint32_t indexCount;
+    uint32_t firstIndex;
+    VkBuffer indexBuffer;
+
+    MaterialInstance *material;
+
+    glm::mat4 transform;
+    VkDeviceAddress vertexBufferAddress;
+};
+
+struct DrawContext {
+    std::vector<RenderObject> OpaqueSurfaces;
 };
 
 constexpr unsigned int FRAME_OVERLAP = 2;
@@ -84,6 +159,12 @@ public:
     AllocatedBuffer create_buffer(size_t allocSize, VkBufferUsageFlags usage, VmaMemoryUsage memoryUsage);
     void destroy_buffer(const AllocatedBuffer &buffer);
 
+    // load textures
+    AllocatedImage create_image(VkExtent3D size, VkFormat format, VkImageUsageFlags usage, bool mipmapped = false);
+    AllocatedImage create_image(void *data, VkExtent3D size, VkFormat format, VkImageUsageFlags usage,
+                                bool mipmapped = false);
+    void destroy_image(const AllocatedImage &img);
+
     VmaAllocator _allocator;
 
     // draw resources
@@ -93,10 +174,11 @@ public:
     float renderScale = 1.f;
 
     // global descriptor allocator
-    DescriptorAllocator globalDescriptorAllocator;
+    DescriptorAllocatorGrowable globalDescriptorAllocator;
 
     VkDescriptorSet _drawImageDescriptors;
     VkDescriptorSetLayout _drawImageDescriptorLayout;
+    VkDescriptorSetLayout _singleImageDescriptorLayout;
 
     // compute pipeline
     VkPipeline _gradientPipeline;
@@ -124,6 +206,22 @@ public:
 
     // mesh
     std::vector<std::shared_ptr<MeshAsset>> testMeshes;
+
+    // scene
+    GPUSceneData sceneData;
+    VkDescriptorSetLayout _gpuSceneDataDescriptorLayout;
+
+    AllocatedImage _whiteImage;
+    AllocatedImage _blackImage;
+    AllocatedImage _greyImage;
+    AllocatedImage _errorCheckerboardImage;
+
+    VkSampler _defaultSamplerLinear;
+    VkSampler _defaultSamplerNearest;
+
+    // material
+    MaterialInstance defaultData;
+    GLTFMetallic_Roughness metalRoughMaterial;
 
     VkInstance _instance;                       // Vulkan library handle
     VkDebugUtilsMessengerEXT _debug_messenger;  // Vulkan debug output handle
