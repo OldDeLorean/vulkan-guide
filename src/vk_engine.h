@@ -51,17 +51,6 @@ struct FrameData {
     DescriptorAllocatorGrowable _frameDescriptors;
 };
 
-struct RenderObject {
-    uint32_t indexCount;
-    uint32_t firstIndex;
-    VkBuffer indexBuffer;
-
-    MaterialInstance *material;
-
-    glm::mat4 transform;
-    VkDeviceAddress vertexBufferAddress;
-};
-
 struct GPUSceneData {
     glm::mat4 view;
     glm::mat4 proj;
@@ -151,6 +140,9 @@ public:
     // draw triangle
     void draw_geometry(VkCommandBuffer cmd);
 
+    // update scene
+    void update_scene();
+
     // run main loop
     void run();
 
@@ -222,6 +214,13 @@ public:
     // material
     MaterialInstance defaultData;
     GLTFMetallic_Roughness metalRoughMaterial;
+
+    // nodes
+    DrawContext mainDrawContext;
+    std::unordered_map<std::string, std::shared_ptr<Node>> loadedNodes;
+
+    // camera
+    Camera mainCamera;
 
     VkInstance _instance;                       // Vulkan library handle
     VkDebugUtilsMessengerEXT _debug_messenger;  // Vulkan debug output handle
