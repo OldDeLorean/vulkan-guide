@@ -52,10 +52,17 @@ void VulkanEngine::init() {
     _isInitialized = true;
 
     mainCamera.velocity = glm::vec3(0.f);
-    mainCamera.position = glm::vec3(0, 0, 5);
+    mainCamera.position = glm::vec3(30.f, -00.f, -085.f);
 
     mainCamera.pitch = 0;
     mainCamera.yaw = 0;
+
+    std::string structurePath = {"..\\..\\assets\\structure.glb"};
+    auto structureFile = loadGltf(this, structurePath);
+
+    assert(structureFile.has_value());
+
+    loadedScenes["structure"] = *structureFile;
 }
 
 void VulkanEngine::destroy_swapchain() {
@@ -71,6 +78,8 @@ void VulkanEngine::cleanup() {
     if (_isInitialized) {
         // make sure the gpu has stopped doing its things
         vkDeviceWaitIdle(_device);
+
+        loadedScenes.clear();
 
         for (int i = 0; i < FRAME_OVERLAP; i++) {
             vkDestroyCommandPool(_device, _frames[i]._commandPool, nullptr);
@@ -243,6 +252,30 @@ void VulkanEngine::draw_background(VkCommandBuffer cmd) {
 }
 
 void VulkanEngine::draw_geometry(VkCommandBuffer cmd) {
+    // reset counters
+    stats.drawcall_count = 0;
+    stats.triangle_count = 0;
+    // begin clock
+    auto start = std::chrono::system_clock::now();
+
+    std::vector<uint32_t> opaque_draws;
+    opaque_draws.reserve(mainDrawContext.OpaqueSurfaces.size());
+
+    for (uint32_t i = 0; i < mainDrawContext.OpaqueSurfaces.size(); i++) {
+        opaque_draws.push_back(i);
+    }
+
+    // sort the opaque surfaces by material and mesh
+    std::sort(opaque_draws.begin(), opaque_draws.end(), [&](const auto& iA, const auto& iB) {
+        const RenderObject& A = mainDrawContext.OpaqueSurfaces[iA];
+        const RenderObject& B = mainDrawContext.OpaqueSurfaces[iB];
+        if (A.material == B.material) {
+            return A.indexBuffer < B.indexBuffer;
+        } else {
+            return A.material < B.material;
+        }
+    });
+
     // begin a render pass  connected to our draw image
     VkRenderingAttachmentInfo colorAttachment =
         vkinit::attachment_info(_drawImage.imageView, nullptr, VK_IMAGE_LAYOUT_GENERAL);
@@ -329,25 +362,79 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd) {
     writer.write_buffer(0, gpuSceneDataBuffer.buffer, sizeof(GPUSceneData), 0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
     writer.update_set(_device, globalDescriptor);
 
-    for (const RenderObject& draw : mainDrawContext.OpaqueSurfaces) {
-        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, draw.material->pipeline->pipeline);
-        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, draw.material->pipeline->layout, 0, 1,
-                                &globalDescriptor, 0, nullptr);
-        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, draw.material->pipeline->layout, 1, 1,
-                                &draw.material->materialSet, 0, nullptr);
+    // defined outside of the draw function, this is the state we will try to skip
+    MaterialPipeline* lastPipeline = nullptr;
+    MaterialInstance* lastMaterial = nullptr;
+    VkBuffer lastIndexBuffer = VK_NULL_HANDLE;
 
-        vkCmdBindIndexBuffer(cmd, draw.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
+    auto draw = [&](const RenderObject& r) {
+        if (r.material != lastMaterial) {
+            lastMaterial = r.material;
+            // rebind pipeline and descriptors if the material changed
+            if (r.material->pipeline != lastPipeline) {
+                lastPipeline = r.material->pipeline;
+                vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, r.material->pipeline->pipeline);
+                vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, r.material->pipeline->layout, 0, 1,
+                                        &globalDescriptor, 0, nullptr);
 
-        GPUDrawPushConstants pushConstants;
-        pushConstants.vertexBuffer = draw.vertexBufferAddress;
-        pushConstants.worldMatrix = draw.transform;
-        vkCmdPushConstants(cmd, draw.material->pipeline->layout, VK_SHADER_STAGE_VERTEX_BIT, 0,
-                           sizeof(GPUDrawPushConstants), &pushConstants);
+                VkViewport viewport = {};
+                viewport.x = 0;
+                viewport.y = 0;
+                viewport.width = (float)_windowExtent.width;
+                viewport.height = (float)_windowExtent.height;
+                viewport.minDepth = 0.f;
+                viewport.maxDepth = 1.f;
 
-        vkCmdDrawIndexed(cmd, draw.indexCount, 1, draw.firstIndex, 0, 0);
+                vkCmdSetViewport(cmd, 0, 1, &viewport);
+
+                VkRect2D scissor = {};
+                scissor.offset.x = 0;
+                scissor.offset.y = 0;
+                scissor.extent.width = _windowExtent.width;
+                scissor.extent.height = _windowExtent.height;
+
+                vkCmdSetScissor(cmd, 0, 1, &scissor);
+            }
+
+            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, r.material->pipeline->layout, 1, 1,
+                                    &r.material->materialSet, 0, nullptr);
+        }
+        // rebind index buffer if needed
+        if (r.indexBuffer != lastIndexBuffer) {
+            lastIndexBuffer = r.indexBuffer;
+            vkCmdBindIndexBuffer(cmd, r.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
+        }
+        // calculate final mesh matrix
+        GPUDrawPushConstants push_constants;
+        push_constants.worldMatrix = r.transform;
+        push_constants.vertexBuffer = r.vertexBufferAddress;
+
+        vkCmdPushConstants(cmd, r.material->pipeline->layout, VK_SHADER_STAGE_VERTEX_BIT, 0,
+                           sizeof(GPUDrawPushConstants), &push_constants);
+
+        vkCmdDrawIndexed(cmd, r.indexCount, 1, r.firstIndex, 0, 0);
+        // stats
+        stats.drawcall_count++;
+        stats.triangle_count += r.indexCount / 3;
+    };
+
+    for (auto& r : opaque_draws) {
+        draw(mainDrawContext.OpaqueSurfaces[r]);
     }
 
-    vkCmdEndRendering(cmd);
+    for (auto& r : mainDrawContext.TransparentSurfaces) {
+        draw(r);
+    }
+
+    // we delete the draw commands now that we processed them
+    mainDrawContext.OpaqueSurfaces.clear();
+    mainDrawContext.TransparentSurfaces.clear();
+
+    auto end = std::chrono::system_clock::now();
+
+    // convert to microseconds (integer), and then come back to miliseconds
+    auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
+    stats.mesh_draw_time = elapsed.count() / 1000.f;
 }
 
 void VulkanEngine::run() {
@@ -356,6 +443,9 @@ void VulkanEngine::run() {
 
     // main loop
     while (!bQuit) {
+        // begin clock
+        auto start = std::chrono::system_clock::now();
+
         // Handle events on queue
         while (SDL_PollEvent(&e) != 0) {
             // close the window when user alt-f4s or clicks the X button
@@ -395,6 +485,15 @@ void VulkanEngine::run() {
         //> imgui_bk
         ImGui::NewFrame();
 
+        ImGui::Begin("Stats");
+
+        ImGui::Text("frametime %f ms", stats.frametime);
+        ImGui::Text("draw time %f ms", stats.mesh_draw_time);
+        ImGui::Text("update time %f ms", stats.scene_update_time);
+        ImGui::Text("triangles %i", stats.triangle_count);
+        ImGui::Text("draws %i", stats.drawcall_count);
+        ImGui::End();
+
         if (ImGui::Begin("background")) {
             ImGui::SliderFloat("Render Scale", &renderScale, 0.3f, 1.f);
 
@@ -411,12 +510,20 @@ void VulkanEngine::run() {
 
             ImGui::End();
         }
+
         ImGui::Render();
 
         //< imgui_bk
 
         // our draw function
         draw();
+
+        // get clock again, compare with start clock
+        auto end = std::chrono::system_clock::now();
+
+        // convert to microseconds (integer), and then come back to miliseconds
+        auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
+        stats.frametime = elapsed.count() / 1000.f;
     }
 }
 
@@ -1155,22 +1262,22 @@ void VulkanEngine::init_default_data() {
     defaultData = metalRoughMaterial.write_material(_device, MaterialPass::MainColor, materialResources,
                                                     globalDescriptorAllocator);
 
-    testMeshes = loadGltfMeshes(this, "..\\..\\assets\\basicmesh.glb").value();
+    // testMeshes = loadGltfMeshes(this, "..\\..\\assets\\basicmesh.glb").value();
 
-    // default meshes
-    for (auto& m : testMeshes) {
-        std::shared_ptr<MeshNode> newNode = std::make_shared<MeshNode>();
-        newNode->mesh = m;
+    // // default meshes
+    // for (auto& m : testMeshes) {
+    //     std::shared_ptr<MeshNode> newNode = std::make_shared<MeshNode>();
+    //     newNode->mesh = m;
 
-        newNode->localTransform = glm::mat4{1.f};
-        newNode->worldTransform = glm::mat4{1.f};
+    //     newNode->localTransform = glm::mat4{1.f};
+    //     newNode->worldTransform = glm::mat4{1.f};
 
-        for (auto& s : newNode->mesh->surfaces) {
-            s.material = std::make_shared<GLTFMaterial>(defaultData);
-        }
+    //     for (auto& s : newNode->mesh->surfaces) {
+    //         s.material = std::make_shared<GLTFMaterial>(defaultData);
+    //     }
 
-        loadedNodes[m->name] = std::move(newNode);
-    }
+    //     loadedNodes[m->name] = std::move(newNode);
+    // }
 }
 
 void VulkanEngine::resize_swapchain() {
@@ -1382,9 +1489,9 @@ void MeshNode::Draw(const glm::mat4& topMatrix, DrawContext& ctx) {
 }
 
 void VulkanEngine::update_scene() {
-    mainDrawContext.OpaqueSurfaces.clear();
+    // mainDrawContext.OpaqueSurfaces.clear();
 
-    loadedNodes["Suzanne"]->Draw(glm::mat4{1.f}, mainDrawContext);
+    // loadedNodes["Suzanne"]->Draw(glm::mat4{1.f}, mainDrawContext);
 
     mainCamera.update();
 
@@ -1402,15 +1509,16 @@ void VulkanEngine::update_scene() {
     sceneData.proj = projection;
     sceneData.viewproj = projection * view;
 
+    loadedScenes["structure"]->Draw(glm::mat4{1.f}, mainDrawContext);
     // some default lighting parameters
-    sceneData.ambientColor = glm::vec4(.1f);
-    sceneData.sunlightColor = glm::vec4(1.f);
-    sceneData.sunlightDirection = glm::vec4(0, 1, 0.5, 1.f);
+    // sceneData.ambientColor = glm::vec4(.1f);
+    // sceneData.sunlightColor = glm::vec4(1.f);
+    // sceneData.sunlightDirection = glm::vec4(0, 1, 0.5, 1.f);
 
-    for (int x = -3; x < 3; x++) {
-        glm::mat4 scale = glm::scale(glm::vec3{0.2});
-        glm::mat4 translation = glm::translate(glm::vec3{x, 1, 0});
+    // for (int x = -3; x < 3; x++) {
+    //     glm::mat4 scale = glm::scale(glm::vec3{0.2});
+    //     glm::mat4 translation = glm::translate(glm::vec3{x, 1, 0});
 
-        loadedNodes["Cube"]->Draw(translation * scale, mainDrawContext);
-    }
+    //     loadedNodes["Cube"]->Draw(translation * scale, mainDrawContext);
+    // }
 }

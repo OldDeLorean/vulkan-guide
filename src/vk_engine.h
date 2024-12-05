@@ -111,6 +111,15 @@ struct RenderObject {
 
 struct DrawContext {
     std::vector<RenderObject> OpaqueSurfaces;
+    std::vector<RenderObject> TransparentSurfaces;
+};
+
+struct EngineStats {
+    float frametime;
+    int triangle_count;
+    int drawcall_count;
+    float scene_update_time;
+    float mesh_draw_time;
 };
 
 constexpr unsigned int FRAME_OVERLAP = 2;
@@ -222,6 +231,12 @@ public:
 
     // camera
     Camera mainCamera;
+
+    // scenes
+    std::unordered_map<std::string, std::shared_ptr<LoadedGLTF>> loadedScenes;
+
+    // stats
+    EngineStats stats;
 
     VkInstance _instance;                       // Vulkan library handle
     VkDebugUtilsMessengerEXT _debug_messenger;  // Vulkan debug output handle
