@@ -287,6 +287,6 @@ private:
 
     void init_default_data();
 
-    // void init_triangle_pipeline();
-    // void init_mesh_pipeline();
+    void init_triangle_pipeline();
+    void init_mesh_pipeline();
 };

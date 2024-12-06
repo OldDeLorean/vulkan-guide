@@ -1,6 +1,7 @@
 ﻿
 #include "vk_engine.h"
 
+#define VMA_IMPLEMENTATION
 #include <SDL.h>
 #include <SDL_vulkan.h>
 #include <vk_images.h>
@@ -18,7 +19,6 @@
 #include "imgui.h"
 #include "imgui_impl_sdl2.h"
 #include "imgui_impl_vulkan.h"
-#define VMA_IMPLEMENTATION
 #include "vk_mem_alloc.h"
 
 constexpr bool bUseValidationLayers = false;
@@ -44,11 +44,9 @@ void VulkanEngine::init() {
 
     init_pipelines();
 
-    init_default_data();
-
-    init_renderables();
-
     init_imgui();
+
+    init_default_data();
 
     // everything went fine
     _isInitialized = true;
@@ -58,135 +56,22 @@ void VulkanEngine::init() {
 
     mainCamera.pitch = 0;
     mainCamera.yaw = 0;
+
+    std::string structurePath = {"..\\..\\assets\\structure.glb"};
+    auto structureFile = loadGltf(this, structurePath);
+
+    assert(structureFile.has_value());
+
+    loadedScenes["structure"] = *structureFile;
 }
 
-void VulkanEngine::init_default_data() {
-    std::array<Vertex, 4> rect_vertices;
+void VulkanEngine::destroy_swapchain() {
+    vkDestroySwapchainKHR(_device, _swapchain, nullptr);
 
-    rect_vertices[0].position = {0.5, -0.5, 0};
-    rect_vertices[1].position = {0.5, 0.5, 0};
-    rect_vertices[2].position = {-0.5, -0.5, 0};
-    rect_vertices[3].position = {-0.5, 0.5, 0};
-
-    rect_vertices[0].color = {0, 0, 0, 1};
-    rect_vertices[1].color = {0.5, 0.5, 0.5, 1};
-    rect_vertices[2].color = {1, 0, 0, 1};
-    rect_vertices[3].color = {0, 1, 0, 1};
-
-    rect_vertices[0].uv_x = 1;
-    rect_vertices[0].uv_y = 0;
-    rect_vertices[1].uv_x = 0;
-    rect_vertices[1].uv_y = 0;
-    rect_vertices[2].uv_x = 1;
-    rect_vertices[2].uv_y = 1;
-    rect_vertices[3].uv_x = 0;
-    rect_vertices[3].uv_y = 1;
-
-    std::array<uint32_t, 6> rect_indices;
-
-    rect_indices[0] = 0;
-    rect_indices[1] = 1;
-    rect_indices[2] = 2;
-
-    rect_indices[3] = 2;
-    rect_indices[4] = 1;
-    rect_indices[5] = 3;
-
-    rectangle = uploadMesh(rect_indices, rect_vertices);
-
-    // delete the rectangle data on engine shutdown
-    // _mainDeletionQueue.push_function([&]() {
-    //     destroy_buffer(rectangle.indexBuffer);
-    //     destroy_buffer(rectangle.vertexBuffer);
-    // });
-
-    // 3 default textures, white, grey, black. 1 pixel each
-    uint32_t white = glm::packUnorm4x8(glm::vec4(1, 1, 1, 1));
-    _whiteImage =
-        create_image((void*)&white, VkExtent3D{1, 1, 1}, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_SAMPLED_BIT);
-
-    uint32_t grey = glm::packUnorm4x8(glm::vec4(0.66f, 0.66f, 0.66f, 1));
-    _greyImage = create_image((void*)&grey, VkExtent3D{1, 1, 1}, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_SAMPLED_BIT);
-
-    uint32_t black = glm::packUnorm4x8(glm::vec4(0, 0, 0, 0));
-    _blackImage =
-        create_image((void*)&black, VkExtent3D{1, 1, 1}, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_SAMPLED_BIT);
-
-    // checkerboard image
-    uint32_t magenta = glm::packUnorm4x8(glm::vec4(1, 0, 1, 1));
-    std::array<uint32_t, 16 * 16> pixels;  // for 16x16 checkerboard texture
-    for (int x = 0; x < 16; x++) {
-        for (int y = 0; y < 16; y++) {
-            pixels[y * 16 + x] = ((x % 2) ^ (y % 2)) ? magenta : black;
-        }
+    // destroy swapchain resources
+    for (int i = 0; i < _swapchainImageViews.size(); i++) {
+        vkDestroyImageView(_device, _swapchainImageViews[i], nullptr);
     }
-    _errorCheckerboardImage =
-        create_image(pixels.data(), VkExtent3D{16, 16, 1}, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_SAMPLED_BIT);
-
-    VkSamplerCreateInfo sampl = {.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
-
-    sampl.magFilter = VK_FILTER_NEAREST;
-    sampl.minFilter = VK_FILTER_NEAREST;
-
-    vkCreateSampler(_device, &sampl, nullptr, &_defaultSamplerNearest);
-
-    sampl.magFilter = VK_FILTER_LINEAR;
-    sampl.minFilter = VK_FILTER_LINEAR;
-    vkCreateSampler(_device, &sampl, nullptr, &_defaultSamplerLinear);
-
-    // _mainDeletionQueue.push_function([&]() {
-    //     vkDestroySampler(_device, _defaultSamplerNearest, nullptr);
-    //     vkDestroySampler(_device, _defaultSamplerLinear, nullptr);
-
-    //     destroy_image(_whiteImage);
-    //     destroy_image(_greyImage);
-    //     destroy_image(_blackImage);
-    //     destroy_image(_errorCheckerboardImage);
-    // });
-
-    // // material
-    // GLTFMetallic_Roughness::MaterialResources materialResources;
-    // // default the material textures
-    // materialResources.colorImage = _whiteImage;
-    // materialResources.colorSampler = _defaultSamplerLinear;
-    // materialResources.metalRoughImage = _whiteImage;
-    // materialResources.metalRoughSampler = _defaultSamplerLinear;
-
-    // // set the uniform buffer for the material data
-    // AllocatedBuffer materialConstants = create_buffer(sizeof(GLTFMetallic_Roughness::MaterialConstants),
-    //                                                   VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-    //                                                   VMA_MEMORY_USAGE_CPU_TO_GPU);
-
-    // // write the buffer
-    // GLTFMetallic_Roughness::MaterialConstants* sceneUniformData =
-    //     (GLTFMetallic_Roughness::MaterialConstants*)materialConstants.allocation->GetMappedData();
-    // sceneUniformData->colorFactors = glm::vec4{1, 1, 1, 1};
-    // sceneUniformData->metal_rough_factors = glm::vec4{1, 0.5, 0, 0};
-
-    // _mainDeletionQueue.push_function([=, this]() { destroy_buffer(materialConstants); });
-
-    // materialResources.dataBuffer = materialConstants.buffer;
-    // materialResources.dataBufferOffset = 0;
-
-    // defaultData = metalRoughMaterial.write_material(_device, MaterialPass::MainColor, materialResources,
-    //                                                 globalDescriptorAllocator);
-
-    // testMeshes = loadGltfMeshes(this, "..\\..\\assets\\basicmesh.glb").value();
-
-    // // default meshes
-    // for (auto& m : testMeshes) {
-    //     std::shared_ptr<MeshNode> newNode = std::make_shared<MeshNode>();
-    //     newNode->mesh = m;
-
-    //     newNode->localTransform = glm::mat4{1.f};
-    //     newNode->worldTransform = glm::mat4{1.f};
-
-    //     for (auto& s : newNode->mesh->surfaces) {
-    //         s.material = std::make_shared<GLTFMaterial>(defaultData);
-    //     }
-
-    //     loadedNodes[m->name] = std::move(newNode);
-    // }
 }
 
 void VulkanEngine::cleanup() {
@@ -224,15 +109,6 @@ void VulkanEngine::cleanup() {
         vkDestroyInstance(_instance, nullptr);
 
         SDL_DestroyWindow(_window);
-    }
-}
-
-void VulkanEngine::destroy_swapchain() {
-    vkDestroySwapchainKHR(_device, _swapchain, nullptr);
-
-    // destroy swapchain resources
-    for (int i = 0; i < _swapchainImageViews.size(); i++) {
-        vkDestroyImageView(_device, _swapchainImageViews[i], nullptr);
     }
 }
 
@@ -904,10 +780,130 @@ void VulkanEngine::init_pipelines() {
     init_background_pipelines();
 
     // GRAPHICS PIPELINES
-    // init_triangle_pipeline();
-    // init_mesh_pipeline();
+    init_triangle_pipeline();
+    init_mesh_pipeline();
 
     metalRoughMaterial.build_pipelines(this);
+}
+
+void VulkanEngine::init_triangle_pipeline() {
+    VkShaderModule triangleFragShader;
+    if (!vkutil::load_shader_module("../../shaders/colored_triangle.frag.spv", _device, &triangleFragShader)) {
+        fmt::print("Error when building the triangle fragment shader module\n");
+    } else {
+        fmt::print("Triangle fragment shader succesfully loaded");
+    }
+
+    VkShaderModule triangleVertexShader;
+    if (!vkutil::load_shader_module("../../shaders/colored_triangle.vert.spv", _device, &triangleVertexShader)) {
+        fmt::print("Error when building the triangle vertex shader module\n");
+    } else {
+        fmt::print("Triangle vertex shader succesfully loaded");
+    }
+
+    // build the pipeline layout that controls the inputs/outputs of the shader
+    // we are not using descriptor sets or other systems yet, so no need to use anything other than empty default
+    VkPipelineLayoutCreateInfo pipeline_layout_info = vkinit::pipeline_layout_create_info();
+    VK_CHECK(vkCreatePipelineLayout(_device, &pipeline_layout_info, nullptr, &_trianglePipelineLayout));
+
+    PipelineBuilder pipelineBuilder;
+
+    // use the triangle layout we created
+    pipelineBuilder._pipelineLayout = _trianglePipelineLayout;
+    // connecting the vertex and pixel shaders to the pipeline
+    pipelineBuilder.set_shaders(triangleVertexShader, triangleFragShader);
+    // it will draw triangles
+    pipelineBuilder.set_input_topology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
+    // filled triangles
+    pipelineBuilder.set_polygon_mode(VK_POLYGON_MODE_FILL);
+    // no backface culling
+    pipelineBuilder.set_cull_mode(VK_CULL_MODE_NONE, VK_FRONT_FACE_CLOCKWISE);
+    // no multisampling
+    pipelineBuilder.set_multisampling_none();
+    // no blending
+    pipelineBuilder.enable_blending_additive();
+    // no depth testing
+    pipelineBuilder.disable_depthtest();
+
+    // connect the image format we will draw into, from draw image
+    pipelineBuilder.set_color_attachment_format(_drawImage.imageFormat);
+    pipelineBuilder.set_depth_format(VK_FORMAT_UNDEFINED);
+
+    // finally build the pipeline
+    _trianglePipeline = pipelineBuilder.build_pipeline(_device);
+
+    // clean structures
+    vkDestroyShaderModule(_device, triangleFragShader, nullptr);
+    vkDestroyShaderModule(_device, triangleVertexShader, nullptr);
+
+    _mainDeletionQueue.push_function([&]() {
+        vkDestroyPipelineLayout(_device, _trianglePipelineLayout, nullptr);
+        vkDestroyPipeline(_device, _trianglePipeline, nullptr);
+    });
+}
+
+void VulkanEngine::init_mesh_pipeline() {
+    VkShaderModule triangleFragShader;
+    if (!vkutil::load_shader_module("../../shaders/tex_image.frag.spv", _device, &triangleFragShader)) {
+        fmt::print("Error when building the fragment shader \n");
+    } else {
+        fmt::print("Triangle fragment shader succesfully loaded \n");
+    }
+
+    VkShaderModule triangleVertexShader;
+    if (!vkutil::load_shader_module("../../shaders/colored_triangle_mesh.vert.spv", _device, &triangleVertexShader)) {
+        fmt::print("Error when building the vertex shader \n");
+    } else {
+        fmt::print("Triangle vertex shader succesfully loaded \n");
+    }
+
+    VkPushConstantRange bufferRange{};
+    bufferRange.offset = 0;
+    bufferRange.size = sizeof(GPUDrawPushConstants);
+    bufferRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+
+    VkPipelineLayoutCreateInfo pipeline_layout_info = vkinit::pipeline_layout_create_info();
+    pipeline_layout_info.pPushConstantRanges = &bufferRange;
+    pipeline_layout_info.pushConstantRangeCount = 1;
+    pipeline_layout_info.pSetLayouts = &_singleImageDescriptorLayout;
+    pipeline_layout_info.setLayoutCount = 1;
+    VK_CHECK(vkCreatePipelineLayout(_device, &pipeline_layout_info, nullptr, &_meshPipelineLayout));
+
+    PipelineBuilder pipelineBuilder;
+
+    // use the triangle layout we created
+    pipelineBuilder._pipelineLayout = _meshPipelineLayout;
+    // connecting the vertex and pixel shaders to the pipeline
+    pipelineBuilder.set_shaders(triangleVertexShader, triangleFragShader);
+    // it will draw triangles
+    pipelineBuilder.set_input_topology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
+    // filled triangles
+    pipelineBuilder.set_polygon_mode(VK_POLYGON_MODE_FILL);
+    // no backface culling
+    pipelineBuilder.set_cull_mode(VK_CULL_MODE_NONE, VK_FRONT_FACE_CLOCKWISE);
+    // no multisampling
+    pipelineBuilder.set_multisampling_none();
+    // no blending
+    pipelineBuilder.disable_blending();
+
+    // pipelineBuilder.disable_depthtest();
+    pipelineBuilder.enable_depthtest(true, VK_COMPARE_OP_GREATER_OR_EQUAL);
+
+    // connect the image format we will draw into, from draw image
+    pipelineBuilder.set_color_attachment_format(_drawImage.imageFormat);
+    pipelineBuilder.set_depth_format(_depthImage.imageFormat);
+
+    // finally build the pipeline
+    _meshPipeline = pipelineBuilder.build_pipeline(_device);
+
+    // clean structures
+    vkDestroyShaderModule(_device, triangleFragShader, nullptr);
+    vkDestroyShaderModule(_device, triangleVertexShader, nullptr);
+
+    _mainDeletionQueue.push_function([&]() {
+        vkDestroyPipelineLayout(_device, _meshPipelineLayout, nullptr);
+        vkDestroyPipeline(_device, _meshPipeline, nullptr);
+    });
 }
 
 void VulkanEngine::init_background_pipelines() {
@@ -1011,15 +1007,6 @@ void VulkanEngine::immediate_submit(std::function<void(VkCommandBuffer cmd)>&& f
     VK_CHECK(vkQueueSubmit2(_graphicsQueue, 1, &submit, _immFence));
 
     VK_CHECK(vkWaitForFences(_device, 1, &_immFence, true, 9999999999));
-}
-
-void VulkanEngine::init_renderables() {
-    std::string structurePath = {"..\\..\\assets\\structure.glb"};
-    auto structureFile = loadGltf(this, structurePath);
-
-    assert(structureFile.has_value());
-
-    loadedScenes["structure"] = *structureFile;
 }
 
 void VulkanEngine::init_imgui() {
@@ -1172,6 +1159,125 @@ GPUMeshBuffers VulkanEngine::uploadMesh(std::span<uint32_t> indices, std::span<V
     destroy_buffer(staging);
 
     return newSurface;
+}
+
+void VulkanEngine::init_default_data() {
+    std::array<Vertex, 4> rect_vertices;
+
+    rect_vertices[0].position = {0.5, -0.5, 0};
+    rect_vertices[1].position = {0.5, 0.5, 0};
+    rect_vertices[2].position = {-0.5, -0.5, 0};
+    rect_vertices[3].position = {-0.5, 0.5, 0};
+
+    rect_vertices[0].color = {0, 0, 0, 1};
+    rect_vertices[1].color = {0.5, 0.5, 0.5, 1};
+    rect_vertices[2].color = {1, 0, 0, 1};
+    rect_vertices[3].color = {0, 1, 0, 1};
+
+    std::array<uint32_t, 6> rect_indices;
+
+    rect_indices[0] = 0;
+    rect_indices[1] = 1;
+    rect_indices[2] = 2;
+
+    rect_indices[3] = 2;
+    rect_indices[4] = 1;
+    rect_indices[5] = 3;
+
+    rectangle = uploadMesh(rect_indices, rect_vertices);
+
+    // delete the rectangle data on engine shutdown
+    _mainDeletionQueue.push_function([&]() {
+        destroy_buffer(rectangle.indexBuffer);
+        destroy_buffer(rectangle.vertexBuffer);
+    });
+
+    // 3 default textures, white, grey, black. 1 pixel each
+    uint32_t white = glm::packUnorm4x8(glm::vec4(1, 1, 1, 1));
+    _whiteImage =
+        create_image((void*)&white, VkExtent3D{1, 1, 1}, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_SAMPLED_BIT);
+
+    uint32_t grey = glm::packUnorm4x8(glm::vec4(0.66f, 0.66f, 0.66f, 1));
+    _greyImage = create_image((void*)&grey, VkExtent3D{1, 1, 1}, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_SAMPLED_BIT);
+
+    uint32_t black = glm::packUnorm4x8(glm::vec4(0, 0, 0, 0));
+    _blackImage =
+        create_image((void*)&black, VkExtent3D{1, 1, 1}, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_SAMPLED_BIT);
+
+    // checkerboard image
+    uint32_t magenta = glm::packUnorm4x8(glm::vec4(1, 0, 1, 1));
+    std::array<uint32_t, 16 * 16> pixels;  // for 16x16 checkerboard texture
+    for (int x = 0; x < 16; x++) {
+        for (int y = 0; y < 16; y++) {
+            pixels[y * 16 + x] = ((x % 2) ^ (y % 2)) ? magenta : black;
+        }
+    }
+    _errorCheckerboardImage =
+        create_image(pixels.data(), VkExtent3D{16, 16, 1}, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_SAMPLED_BIT);
+
+    VkSamplerCreateInfo sampl = {.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
+
+    sampl.magFilter = VK_FILTER_NEAREST;
+    sampl.minFilter = VK_FILTER_NEAREST;
+
+    vkCreateSampler(_device, &sampl, nullptr, &_defaultSamplerNearest);
+
+    sampl.magFilter = VK_FILTER_LINEAR;
+    sampl.minFilter = VK_FILTER_LINEAR;
+    vkCreateSampler(_device, &sampl, nullptr, &_defaultSamplerLinear);
+
+    _mainDeletionQueue.push_function([&]() {
+        vkDestroySampler(_device, _defaultSamplerNearest, nullptr);
+        vkDestroySampler(_device, _defaultSamplerLinear, nullptr);
+
+        destroy_image(_whiteImage);
+        destroy_image(_greyImage);
+        destroy_image(_blackImage);
+        destroy_image(_errorCheckerboardImage);
+    });
+
+    // material
+    GLTFMetallic_Roughness::MaterialResources materialResources;
+    // default the material textures
+    materialResources.colorImage = _whiteImage;
+    materialResources.colorSampler = _defaultSamplerLinear;
+    materialResources.metalRoughImage = _whiteImage;
+    materialResources.metalRoughSampler = _defaultSamplerLinear;
+
+    // set the uniform buffer for the material data
+    AllocatedBuffer materialConstants = create_buffer(sizeof(GLTFMetallic_Roughness::MaterialConstants),
+                                                      VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+
+    // write the buffer
+    GLTFMetallic_Roughness::MaterialConstants* sceneUniformData =
+        (GLTFMetallic_Roughness::MaterialConstants*)materialConstants.allocation->GetMappedData();
+    sceneUniformData->colorFactors = glm::vec4{1, 1, 1, 1};
+    sceneUniformData->metal_rough_factors = glm::vec4{1, 0.5, 0, 0};
+
+    _mainDeletionQueue.push_function([=, this]() { destroy_buffer(materialConstants); });
+
+    materialResources.dataBuffer = materialConstants.buffer;
+    materialResources.dataBufferOffset = 0;
+
+    defaultData = metalRoughMaterial.write_material(_device, MaterialPass::MainColor, materialResources,
+                                                    globalDescriptorAllocator);
+
+    // testMeshes = loadGltfMeshes(this, "..\\..\\assets\\basicmesh.glb").value();
+
+    // // default meshes
+    // for (auto& m : testMeshes) {
+    //     std::shared_ptr<MeshNode> newNode = std::make_shared<MeshNode>();
+    //     newNode->mesh = m;
+
+    //     newNode->localTransform = glm::mat4{1.f};
+    //     newNode->worldTransform = glm::mat4{1.f};
+
+    //     for (auto& s : newNode->mesh->surfaces) {
+    //         s.material = std::make_shared<GLTFMaterial>(defaultData);
+    //     }
+
+    //     loadedNodes[m->name] = std::move(newNode);
+    // }
 }
 
 void VulkanEngine::resize_swapchain() {
@@ -1416,124 +1522,3 @@ void VulkanEngine::update_scene() {
     //     loadedNodes["Cube"]->Draw(translation * scale, mainDrawContext);
     // }
 }
-
-// void VulkanEngine::init_triangle_pipeline() {
-//     VkShaderModule triangleFragShader;
-//     if (!vkutil::load_shader_module("../../shaders/colored_triangle.frag.spv", _device, &triangleFragShader)) {
-//         fmt::print("Error when building the triangle fragment shader module\n");
-//     } else {
-//         fmt::print("Triangle fragment shader succesfully loaded");
-//     }
-
-//     VkShaderModule triangleVertexShader;
-//     if (!vkutil::load_shader_module("../../shaders/colored_triangle.vert.spv", _device, &triangleVertexShader)) {
-//         fmt::print("Error when building the triangle vertex shader module\n");
-//     } else {
-//         fmt::print("Triangle vertex shader succesfully loaded");
-//     }
-
-//     // build the pipeline layout that controls the inputs/outputs of the shader
-//     // we are not using descriptor sets or other systems yet, so no need to use anything other than empty default
-//     VkPipelineLayoutCreateInfo pipeline_layout_info = vkinit::pipeline_layout_create_info();
-//     VK_CHECK(vkCreatePipelineLayout(_device, &pipeline_layout_info, nullptr, &_trianglePipelineLayout));
-
-//     PipelineBuilder pipelineBuilder;
-
-//     // use the triangle layout we created
-//     pipelineBuilder._pipelineLayout = _trianglePipelineLayout;
-//     // connecting the vertex and pixel shaders to the pipeline
-//     pipelineBuilder.set_shaders(triangleVertexShader, triangleFragShader);
-//     // it will draw triangles
-//     pipelineBuilder.set_input_topology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
-//     // filled triangles
-//     pipelineBuilder.set_polygon_mode(VK_POLYGON_MODE_FILL);
-//     // no backface culling
-//     pipelineBuilder.set_cull_mode(VK_CULL_MODE_NONE, VK_FRONT_FACE_CLOCKWISE);
-//     // no multisampling
-//     pipelineBuilder.set_multisampling_none();
-//     // no blending
-//     pipelineBuilder.enable_blending_additive();
-//     // no depth testing
-//     pipelineBuilder.disable_depthtest();
-
-//     // connect the image format we will draw into, from draw image
-//     pipelineBuilder.set_color_attachment_format(_drawImage.imageFormat);
-//     pipelineBuilder.set_depth_format(VK_FORMAT_UNDEFINED);
-
-//     // finally build the pipeline
-//     _trianglePipeline = pipelineBuilder.build_pipeline(_device);
-
-//     // clean structures
-//     vkDestroyShaderModule(_device, triangleFragShader, nullptr);
-//     vkDestroyShaderModule(_device, triangleVertexShader, nullptr);
-
-//     _mainDeletionQueue.push_function([&]() {
-//         vkDestroyPipelineLayout(_device, _trianglePipelineLayout, nullptr);
-//         vkDestroyPipeline(_device, _trianglePipeline, nullptr);
-//     });
-// }
-
-// void VulkanEngine::init_mesh_pipeline() {
-//     VkShaderModule triangleFragShader;
-//     if (!vkutil::load_shader_module("../../shaders/tex_image.frag.spv", _device, &triangleFragShader)) {
-//         fmt::print("Error when building the fragment shader \n");
-//     } else {
-//         fmt::print("Triangle fragment shader succesfully loaded \n");
-//     }
-
-//     VkShaderModule triangleVertexShader;
-//     if (!vkutil::load_shader_module("../../shaders/colored_triangle_mesh.vert.spv", _device, &triangleVertexShader))
-//     {
-//         fmt::print("Error when building the vertex shader \n");
-//     } else {
-//         fmt::print("Triangle vertex shader succesfully loaded \n");
-//     }
-
-//     VkPushConstantRange bufferRange{};
-//     bufferRange.offset = 0;
-//     bufferRange.size = sizeof(GPUDrawPushConstants);
-//     bufferRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-
-//     VkPipelineLayoutCreateInfo pipeline_layout_info = vkinit::pipeline_layout_create_info();
-//     pipeline_layout_info.pPushConstantRanges = &bufferRange;
-//     pipeline_layout_info.pushConstantRangeCount = 1;
-//     pipeline_layout_info.pSetLayouts = &_singleImageDescriptorLayout;
-//     pipeline_layout_info.setLayoutCount = 1;
-//     VK_CHECK(vkCreatePipelineLayout(_device, &pipeline_layout_info, nullptr, &_meshPipelineLayout));
-
-//     PipelineBuilder pipelineBuilder;
-
-//     // use the triangle layout we created
-//     pipelineBuilder._pipelineLayout = _meshPipelineLayout;
-//     // connecting the vertex and pixel shaders to the pipeline
-//     pipelineBuilder.set_shaders(triangleVertexShader, triangleFragShader);
-//     // it will draw triangles
-//     pipelineBuilder.set_input_topology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
-//     // filled triangles
-//     pipelineBuilder.set_polygon_mode(VK_POLYGON_MODE_FILL);
-//     // no backface culling
-//     pipelineBuilder.set_cull_mode(VK_CULL_MODE_NONE, VK_FRONT_FACE_CLOCKWISE);
-//     // no multisampling
-//     pipelineBuilder.set_multisampling_none();
-//     // no blending
-//     pipelineBuilder.disable_blending();
-
-//     // pipelineBuilder.disable_depthtest();
-//     pipelineBuilder.enable_depthtest(true, VK_COMPARE_OP_GREATER_OR_EQUAL);
-
-//     // connect the image format we will draw into, from draw image
-//     pipelineBuilder.set_color_attachment_format(_drawImage.imageFormat);
-//     pipelineBuilder.set_depth_format(_depthImage.imageFormat);
-
-//     // finally build the pipeline
-//     _meshPipeline = pipelineBuilder.build_pipeline(_device);
-
-//     // clean structures
-//     vkDestroyShaderModule(_device, triangleFragShader, nullptr);
-//     vkDestroyShaderModule(_device, triangleVertexShader, nullptr);
-
-//     _mainDeletionQueue.push_function([&]() {
-//         vkDestroyPipelineLayout(_device, _meshPipelineLayout, nullptr);
-//         vkDestroyPipeline(_device, _meshPipeline, nullptr);
-//     });
-// }
