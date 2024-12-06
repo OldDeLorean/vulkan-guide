@@ -3,6 +3,7 @@
 #include <fastgltf/glm_element_traits.hpp>
 #include <fastgltf/parser.hpp>
 #include <fastgltf/tools.hpp>
+#include <fastgltf/util.hpp>
 #include <glm/gtx/quaternion.hpp>
 #include <iostream>
 
@@ -119,13 +120,6 @@ std::optional<std::vector<std::shared_ptr<MeshAsset>>> loadGltfMeshes(VulkanEngi
     }
 
     return meshes;
-}
-
-void LoadedGLTF::Draw(const glm::mat4& topMatrix, DrawContext& ctx) {
-    // create renderables from the scenenodes
-    for (auto& n : topNodes) {
-        n->Draw(topMatrix, ctx);
-    }
 }
 
 std::optional<AllocatedImage> load_image(VulkanEngine* engine, fastgltf::Asset& asset, fastgltf::Image& image) {
@@ -524,11 +518,18 @@ std::optional<std::shared_ptr<LoadedGLTF>> loadGltf(VulkanEngine* engine, std::s
     return scene;
 }
 
+void LoadedGLTF::Draw(const glm::mat4& topMatrix, DrawContext& ctx) {
+    // create renderables from the scenenodes
+    for (auto& n : topNodes) {
+        n->Draw(topMatrix, ctx);
+    }
+}
+
 void LoadedGLTF::clearAll() {
     VkDevice dv = creator->_device;
 
-    descriptorPool.destroy_pools(dv);
-    creator->destroy_buffer(materialDataBuffer);
+    // descriptorPool.destroy_pools(dv);
+    // creator->destroy_buffer(materialDataBuffer);
 
     for (auto& [k, v] : meshes) {
         creator->destroy_buffer(v->meshBuffers.indexBuffer);
@@ -546,4 +547,11 @@ void LoadedGLTF::clearAll() {
     for (auto& sampler : samplers) {
         vkDestroySampler(dv, sampler, nullptr);
     }
+
+    auto materialBuffer = materialDataBuffer;
+    auto samplersToDestroy = samplers;
+
+    descriptorPool.destroy_pools(dv);
+
+    creator->destroy_buffer(materialBuffer);
 }
