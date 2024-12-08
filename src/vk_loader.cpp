@@ -160,7 +160,7 @@ std::optional<AllocatedImage> load_image(VulkanEngine* engine, fastgltf::Asset& 
                     imagesize.depth = 1;
 
                     newImage = engine->create_image(data, imagesize, VK_FORMAT_R8G8B8A8_UNORM,
-                                                    VK_IMAGE_USAGE_SAMPLED_BIT, false);
+                                                    VK_IMAGE_USAGE_SAMPLED_BIT, true);
 
                     stbi_image_free(data);
                 }
@@ -185,7 +185,7 @@ std::optional<AllocatedImage> load_image(VulkanEngine* engine, fastgltf::Asset& 
                                        imagesize.depth = 1;
 
                                        newImage = engine->create_image(data, imagesize, VK_FORMAT_R8G8B8A8_UNORM,
-                                                                       VK_IMAGE_USAGE_SAMPLED_BIT, false);
+                                                                       VK_IMAGE_USAGE_SAMPLED_BIT, true);
 
                                        stbi_image_free(data);
                                    }
@@ -313,7 +313,6 @@ std::optional<std::shared_ptr<LoadedGLTF>> loadGltf(VulkanEngine* engine, std::s
         if (img.has_value()) {
             images.push_back(*img);
             file.images[image.name.c_str()] = *img;
-            fmt::print("It's okay!\n");
         } else {
             // we failed to load, so lets give the slot a default white texture to not
             // completely break loading
