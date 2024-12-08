@@ -278,7 +278,7 @@ void VulkanEngine::draw_imgui(VkCommandBuffer cmd, VkImageView targetImageView) 
 }
 
 void VulkanEngine::draw() {
-    // update_scene();
+    update_scene();
 
     // wait until the gpu has finished rendering the last frame. Timeout of 1 second
     VK_CHECK(vkWaitForFences(_device, 1, &get_current_frame()._renderFence, true, 1000000000));
@@ -636,14 +636,13 @@ void VulkanEngine::run() {
 
         //< imgui_bk
 
-        update_scene();
+        // update_scene();
 
         // our draw function
         draw();
 
         // get clock again, compare with start clock
         auto end = std::chrono::system_clock::now();
-
         // convert to microseconds (integer), and then come back to miliseconds
         auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
         stats.frametime = elapsed.count() / 1000.f;
@@ -651,6 +650,7 @@ void VulkanEngine::run() {
 }
 
 void VulkanEngine::update_scene() {
+    auto start = std::chrono::system_clock::now();
     // mainDrawContext.OpaqueSurfaces.clear();
 
     // loadedNodes["Suzanne"]->Draw(glm::mat4{1.f}, mainDrawContext);
@@ -672,6 +672,12 @@ void VulkanEngine::update_scene() {
     sceneData.viewproj = projection * view;
 
     loadedScenes["structure"]->Draw(glm::mat4{1.f}, mainDrawContext);
+
+    // get clock again, compare with start clock
+    auto end = std::chrono::system_clock::now();
+    // convert to microseconds (integer), and then come back to miliseconds
+    auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
+    stats.scene_update_time = elapsed.count() / 1000.f;
 }
 
 AllocatedBuffer VulkanEngine::create_buffer(size_t allocSize, VkBufferUsageFlags usage, VmaMemoryUsage memoryUsage) {
