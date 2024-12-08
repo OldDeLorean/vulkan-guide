@@ -323,15 +323,15 @@ void VulkanEngine::draw() {
 
     // transition our main draw image into general layout so we can write into it
     // we will overwrite it all so we dont care about what was the older layout
-    vkutil::transition_image(cmd, _drawImage.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL);
+    // vkutil::transition_image(cmd, _drawImage.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL);
 
-    draw_background(cmd);
+    // draw_background(cmd);
 
     vkutil::transition_image(cmd, _drawImage.image, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
     vkutil::transition_image(cmd, _depthImage.image, VK_IMAGE_LAYOUT_UNDEFINED,
                              VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL);
 
-    draw_geometry(cmd);
+    draw_background(cmd);
 
     // transtion the draw image and the swapchain image into their correct transfer layouts
     vkutil::transition_image(cmd, _drawImage.image, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
@@ -445,7 +445,9 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd) {
     opaque_draws.reserve(mainDrawContext.OpaqueSurfaces.size());
 
     for (uint32_t i = 0; i < mainDrawContext.OpaqueSurfaces.size(); i++) {
-        opaque_draws.push_back(i);
+        if (is_visible(mainDrawContext.OpaqueSurfaces[i], sceneData.viewproj)) {
+            opaque_draws.push_back(i);
+        }
     }
 
     // sort the opaque surfaces by material and mesh
@@ -530,6 +532,9 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd) {
         // stats
         stats.drawcall_count++;
         stats.triangle_count += r.indexCount / 3;
+
+        fmt::println("Count", stats.triangle_count);
+        fmt::println("Draw {}", stats.drawcall_count);
 
         vkCmdDrawIndexed(cmd, r.indexCount, 1, r.firstIndex, 0, 0);
     };
@@ -1315,7 +1320,11 @@ void MeshNode::Draw(const glm::mat4& topMatrix, DrawContext& ctx) {
         def.transform = nodeMatrix;
         def.vertexBufferAddress = mesh->meshBuffers.vertexBufferAddress;
 
-        ctx.OpaqueSurfaces.push_back(def);
+        if (s.material->data.passType == MaterialPass::Transparent) {
+            ctx.TransparentSurfaces.push_back(def);
+        } else {
+            ctx.OpaqueSurfaces.push_back(def);
+        }
     }
 
     // recurse down
