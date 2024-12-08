@@ -122,7 +122,8 @@ std::optional<std::vector<std::shared_ptr<MeshAsset>>> loadGltfMeshes(VulkanEngi
     return meshes;
 }
 
-std::optional<AllocatedImage> load_image(VulkanEngine* engine, fastgltf::Asset& asset, fastgltf::Image& image) {
+std::optional<AllocatedImage> load_image(VulkanEngine* engine, fastgltf::Asset& asset, fastgltf::Image& image,
+                                         const std::string& baseFolderPath) {
     AllocatedImage newImage{};
 
     int width, height, nrChannels;
@@ -135,8 +136,11 @@ std::optional<AllocatedImage> load_image(VulkanEngine* engine, fastgltf::Asset& 
                 assert(filePath.uri.isLocalPath());    // We're only capable of loading
                                                        // local files.
 
-                const std::string path(filePath.uri.path().begin(),
-                                       filePath.uri.path().end());  // Thanks C++.
+                // const std::string path(filePath.uri.path().begin(),
+                //                        filePath.uri.path().end());  // Thanks C++.
+                //                                                     // Resolve the absolute path
+                const std::string path =
+                    baseFolderPath + "/" + std::string(filePath.uri.path().begin(), filePath.uri.path().end());
                 unsigned char* data = stbi_load(path.c_str(), &width, &height, &nrChannels, 4);
                 if (data) {
                     VkExtent3D imagesize;
@@ -234,7 +238,8 @@ VkSamplerMipmapMode extract_mipmap_mode(fastgltf::Filter filter) {
     }
 }
 
-std::optional<std::shared_ptr<LoadedGLTF>> loadGltf(VulkanEngine* engine, std::string_view filePath) {
+std::optional<std::shared_ptr<LoadedGLTF>> loadGltf(VulkanEngine* engine, std::string_view filePath,
+                                                    const std::string& baseFolderPath) {
     fmt::print("Loading GLTF: {}", filePath);
 
     std::shared_ptr<LoadedGLTF> scene = std::make_shared<LoadedGLTF>();
@@ -308,7 +313,7 @@ std::optional<std::shared_ptr<LoadedGLTF>> loadGltf(VulkanEngine* engine, std::s
 
     // load all textures
     for (fastgltf::Image& image : gltf.images) {
-        std::optional<AllocatedImage> img = load_image(engine, gltf, image);
+        std::optional<AllocatedImage> img = load_image(engine, gltf, image, baseFolderPath);
 
         if (img.has_value()) {
             images.push_back(*img);

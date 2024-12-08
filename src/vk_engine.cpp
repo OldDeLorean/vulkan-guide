@@ -533,6 +533,8 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd) {
         stats.drawcall_count++;
         stats.triangle_count += r.indexCount / 3;
 
+        // fmt::println("Count {}", stats.triangle_count);
+
         vkCmdDrawIndexed(cmd, r.indexCount, 1, r.firstIndex, 0, 0);
     };
 
@@ -609,6 +611,7 @@ void VulkanEngine::run() {
         ImGui::Begin("Stats");
 
         ImGui::Text("frametime %f ms", stats.frametime);
+        ImGui::Text("fps %f", stats.fps);
         ImGui::Text("draw time %f ms", stats.mesh_draw_time);
         ImGui::Text("update time %f ms", stats.scene_update_time);
         ImGui::Text("triangles %i", stats.triangle_count);
@@ -646,6 +649,8 @@ void VulkanEngine::run() {
         // convert to microseconds (integer), and then come back to miliseconds
         auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
         stats.frametime = elapsed.count() / 1000.f;
+        double frameTimeSeconds = stats.frametime / 1000.0;  // Convert to seconds
+        stats.fps = 1.0 / frameTimeSeconds;                  // Calculate FPS
     }
 }
 
@@ -671,7 +676,9 @@ void VulkanEngine::update_scene() {
     sceneData.proj = projection;
     sceneData.viewproj = projection * view;
 
-    loadedScenes["structure"]->Draw(glm::mat4{1.f}, mainDrawContext);
+    for (auto& [name, scene] : loadedScenes) {
+        scene->Draw(glm::mat4{1.f}, mainDrawContext);
+    }
 
     // get clock again, compare with start clock
     auto end = std::chrono::system_clock::now();
@@ -1090,12 +1097,29 @@ void VulkanEngine::init_sync_structures() {
 }
 
 void VulkanEngine::init_renderables() {
-    std::string structurePath = {"..\\..\\assets\\structure.glb"};
-    auto structureFile = loadGltf(this, structurePath);
+    // List of scene file paths
+    std::vector<std::pair<std::string, std::string>> scenePaths = {
+        {"structure", "..\\..\\assets\\structure.glb"}
+        // {"structure", "c:\\Users\\rodionfa\\Downloads\\main1_sponza\\main1_sponza\\NewSponza_Main_glTF_003.gltf"},
+        // {"ivy", "c:\\Users\\rodionfa\\Downloads\\pkg_b_ivy\\pkg_b_ivy\\NewSponza_IvyGrowth_glTF.gltf"},
+        // {"cypress", "c:\\Users\\rodionfa\\Downloads\\pkg_c1_trees\\pkg_c1_trees\\NewSponza_CypressTree_glTF.gltf"},
+        // {"curtains",
+        // "c:\\Users\\rodionfa\\Downloads\\pkg_a_curtains\\pkg_a_curtains\\NewSponza_Curtains_glTF.gltf"},
+    };
+    // Loop over the scenes to load them
+    for (const auto& [sceneName, scenePath] : scenePaths) {
+        std::string baseFolderPath = scenePath.substr(0, scenePath.find_last_of("\\/"));
 
-    assert(structureFile.has_value());
+        auto sceneFile = loadGltf(this, scenePath, baseFolderPath);
+        if (!sceneFile.has_value()) {
+            // std::cerr << "Failed to load scene: " << sceneName << " from path: " << scenePath << std::endl;
+            fmt::println("Failed to load scene: {} from path: {}\n", sceneName, scenePath);
+            continue;
+        }
 
-    loadedScenes["structure"] = *structureFile;
+        // Store the loaded scene
+        loadedScenes[sceneName] = *sceneFile;
+    }
 }
 
 void VulkanEngine::init_imgui() {
